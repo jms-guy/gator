@@ -1,9 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"github.com/jms-guy/rss_aggregator/internal/config"
+	"github.com/jms-guy/rss_aggregator/internal/database"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -13,12 +17,20 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	s.configFile = &configuration
+	s.cfg = &configuration
+	dataBase, err := sql.Open("postgres", s.cfg.DbUrl)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(dataBase)
+	s.db = dbQueries
 
 	commands := commands{
 		cmds: make(map[string]func(*state, command) error),
 	}
 	commands.register("login", handlerLogin)
+	commands.register("register", handlerRegister)
 
 	args := os.Args
 	if len(args) < 2 {
