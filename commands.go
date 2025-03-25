@@ -24,12 +24,34 @@ type commands struct {
 	cmds	map[string]func(*state, command) error
 }
 
-func handlerLogin(s *state, cmd command) error {
-	if len(cmd.args) == 0 {
-		return fmt.Errorf("missing username")
+func handlerUsers(s *state, cmd command) error {
+	users, err := s.db.ListUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("error retrieving users list: %w", err)
 	}
-	if len(cmd.args) > 1 {
-		return fmt.Errorf("too many arguments, expecting single username")
+	for _, name := range users {
+		if name != s.cfg.CurrentUserName {
+			fmt.Printf("* %s\n", name)
+		} else {
+			fmt.Printf("* %s (current)\n", name)
+		}
+	}
+	return nil
+}
+
+func handlerReset(s *state, cmd command) error {
+	err := s.db.ClearDatabase(context.Background())
+	if err != nil {
+		return fmt.Errorf("error clearing database: %w", err)
+	}
+	fmt.Println("database cleared successfully.")
+	return nil
+}
+
+func handlerLogin(s *state, cmd command) error {
+	argErr := argCheck(cmd.args)
+	if argErr != nil {
+		return argErr
 	}
 	userName := cmd.args[0]
 
@@ -47,11 +69,9 @@ func handlerLogin(s *state, cmd command) error {
 }
 
 func handlerRegister(s *state, cmd command) error {
-	if len(cmd.args) == 0 {
-		return fmt.Errorf("missing name")
-	}
-	if len(cmd.args) > 1 {
-		return fmt.Errorf("too many arguments, expecting single name")
+	argErr := argCheck(cmd.args)
+	if argErr != nil {
+		return argErr
 	}
 
 	args := database.CreateUserParams{
@@ -80,4 +100,14 @@ func (c *commands) run(s *state, cmd command) error {
 		return fmt.Errorf("unknown command: %s", cmd.name)
 	}
 	return command(s, cmd)
+}
+
+func argCheck(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no command input")
+	}
+	if len(args) > 1 {
+		return fmt.Errorf("too many arguments given, expecting single string")
+	}
+	return nil
 }
