@@ -24,7 +24,19 @@ type commands struct {
 	cmds	map[string]func(*state, command) error
 }
 
-func handlerUsers(s *state, cmd command) error {
+func handlerAgg(s *state, cmd command) error {	//Aggregator service
+	url := "https://www.wagslane.dev/index.xml"
+
+	feed, err := fetchFeed(context.Background(), url)
+	if err != nil {
+		return fmt.Errorf("error fetching rss feed of url: %s", url)
+	}
+	fmt.Println(feed)
+
+	return nil
+}
+
+func handlerUsers(s *state, cmd command) error {	//Returns list of users
 	users, err := s.db.ListUsers(context.Background())
 	if err != nil {
 		return fmt.Errorf("error retrieving users list: %w", err)
@@ -39,7 +51,7 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
-func handlerReset(s *state, cmd command) error {
+func handlerReset(s *state, cmd command) error {	//Resets database (for testing purposes)
 	err := s.db.ClearDatabase(context.Background())
 	if err != nil {
 		return fmt.Errorf("error clearing database: %w", err)
@@ -48,7 +60,7 @@ func handlerReset(s *state, cmd command) error {
 	return nil
 }
 
-func handlerLogin(s *state, cmd command) error {
+func handlerLogin(s *state, cmd command) error {	//Logs in user (user must be registered)
 	argErr := argCheck(cmd.args)
 	if argErr != nil {
 		return argErr
@@ -68,7 +80,7 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
-func handlerRegister(s *state, cmd command) error {
+func handlerRegister(s *state, cmd command) error {	//Registers new user
 	argErr := argCheck(cmd.args)
 	if argErr != nil {
 		return argErr
@@ -90,11 +102,11 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
-func (c *commands) register(name string, f func(*state, command) error) {
+func (c *commands) register(name string, f func(*state, command) error) {	//Registers command in state/commands struct
 	c.cmds[name] = f
 }
 
-func (c *commands) run(s *state, cmd command) error {
+func (c *commands) run(s *state, cmd command) error {	//Runs command in main
 	command, ok := c.cmds[cmd.name]
 	if !ok {
 		return fmt.Errorf("unknown command: %s", cmd.name)
@@ -102,7 +114,7 @@ func (c *commands) run(s *state, cmd command) error {
 	return command(s, cmd)
 }
 
-func argCheck(args []string) error {
+func argCheck(args []string) error {	//Error check for arg input
 	if len(args) == 0 {
 		return fmt.Errorf("no command input")
 	}
