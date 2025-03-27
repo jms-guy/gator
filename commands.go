@@ -36,6 +36,57 @@ func handlerAgg(s *state, cmd command) error {	//Aggregator service
 	return nil
 }
 
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return fmt.Errorf("error retrieving feeds: %w", err)
+	}
+
+	for _, feed := range feeds {
+		userName, err := s.db.GetUserName(context.Background(), feed.UserID)
+		if err != nil {
+			return fmt.Errorf("error getting name of user: %w", err)
+		}
+
+		fmt.Println(feed.Name)
+		fmt.Println(feed.Url)
+		fmt.Println(userName)
+		fmt.Println("~~~~~~~~~~~~~~")
+	}
+	return nil
+}
+
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		return fmt.Errorf("expected input: 'addfeed -feedname- -url-")
+	}
+
+	currentUser := s.cfg.CurrentUserName
+	feedname := cmd.args[0]
+	url := cmd.args[1]
+
+	user, err := s.db.GetUser(context.Background(), currentUser)
+	if err != nil {
+		return fmt.Errorf("error retrieving user from database: %w", err)
+	}
+
+	newFeed := database.CreateFeedParams{
+		ID: uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name: feedname,
+		Url: url,
+		UserID: user.ID,
+	}
+
+	feed, err := s.db.CreateFeed(context.Background(), newFeed)
+	if err != nil {
+		return fmt.Errorf("error creating new feed: %w", err)
+	}
+	fmt.Println(feed)
+	return nil
+}
+
 func handlerUsers(s *state, cmd command) error {	//Returns list of users
 	users, err := s.db.ListUsers(context.Background())
 	if err != nil {
