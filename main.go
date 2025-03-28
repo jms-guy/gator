@@ -18,24 +18,28 @@ func main() {
 		return
 	}
 	s.cfg = &configuration
+
 	dataBase, err := sql.Open("postgres", s.cfg.DbUrl)	//Sets database
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+
 	dbQueries := database.New(dataBase)
 	s.db = dbQueries	//Sets queries
 
 	commands := commands{	//Initialized commands for cli
 		cmds: make(map[string]func(*state, command) error),
 	}
-	commands.register("login", handlerLogin)
-	commands.register("register", handlerRegister)
-	commands.register("reset", handlerReset)
-	commands.register("users", handlerUsers)
-	commands.register("agg", handlerAgg)
-	commands.register("addfeed", handlerAddFeed)
-	commands.register("feeds", handlerFeeds)
+	commands.register("login", handlerLogin)	//Login command	- logs in user
+	commands.register("register", handlerRegister)	//Register command	- adds user to database
+	commands.register("reset", handlerReset)	//Reset command	- clears database of all data
+	commands.register("users", handlerUsers)	//Users command	- lists users in database
+	commands.register("agg", handlerAgg)	//Aggregator command - handles long-running aggregator service 
+	commands.register("addfeed", handlerAddFeed)	//Addfeed command - adds a feed to database
+	commands.register("feeds", handlerFeeds)	//Feeds command - lists feeds in database
+	commands.register("follow", handlerFollow)	//Follow command - adds a follow record, for the given url feed and current user
+	commands.register("following", handlerFollowing)	//Following command - lists all feeds being followed by current user
 
 	args := os.Args	//Gets user input arguments
 	if len(args) < 2 {
@@ -43,10 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmd := command{
+	cmd := command{	//Sets the input command
 		name: args[1],
 		args: args[2:],
 	}
+	
 	if err := commands.run(&s, cmd); err != nil {	//Runs command
 		fmt.Println(err)
 		os.Exit(1)
