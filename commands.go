@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"time"
 	"os"
+	"strings"
+	"strconv"
+	"time"
 	"github.com/google/uuid"
 	"github.com/jms-guy/rss_aggregator/internal/config"
 	"github.com/jms-guy/rss_aggregator/internal/database"
@@ -25,18 +28,175 @@ type commands struct {	//Each command in the list of commands
 }
 
 func handlerAgg(s *state, cmd command) error {	//Aggregator service
-	url := "https://www.wagslane.dev/index.xml"
-
-	feed, err := fetchFeed(context.Background(), url)
-	if err != nil {
-		return fmt.Errorf("error fetching rss feed of url: %s", url)
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("missing time duration")
 	}
-	fmt.Println(feed)
+	time_between_reqs := cmd.args[0]
+
+	timeBetweenReqs, err := time.ParseDuration(time_between_reqs)
+	if err != nil {
+		return fmt.Errorf("error parsing duration string: %w", err)
+	}
+	fmt.Printf(" ~~Collecting feeds every %s~~\n", time_between_reqs)
+	ticker := time.NewTicker(timeBetweenReqs)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
+}
+
+func handlerBrowse(s *state, cmd command, user database.User) error {	//Browses posts from feeds followed by user, takes optional limit input
+	var limit int32
+	if len(cmd.args) == 0 {
+		limit = 2
+	} else {
+		number, err := strconv.Atoi(cmd.args[0])
+		if err != nil {
+			return fmt.Errorf("number conversion error: %w", err)
+		}
+		limit = int32(number)
+	}
+	getPosts := database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit: limit,
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(), getPosts)
+	if err != nil {
+		return fmt.Errorf("error retrieving posts: %w", err)
+	}
+	if len(posts) == 0 {
+    	fmt.Println("No posts found. You might not be following any feeds, or the feeds don't have any posts yet.")
+    	return nil 
+	}
+	fmt.Printf("Showing %d most recent posts from your feeds:\n\n", limit)
+
+	for _, post := range posts {
+		if post.Title.Valid {
+        	fmt.Printf(" ** %s **\n", post.Title.String)
+    	} else {
+        	fmt.Println(" ** [No Title] **")
+    	}
+		fmt.Printf(" ** Published: %v\n", post.PublishedAt.Format("Jan 2, 2006 at 3:04 PM"))
+		fmt.Println(" ~~~~~~~~~~")
+		if post.Description.Valid {
+        	fmt.Printf(" %s\n", post.Description.String)
+    	} else {
+        	fmt.Println(" [No Description]")
+    	}
+		fmt.Println(" ~~~~~~~~~~")
+	}
+	return nil
+}
+
+func scrapeFeeds(s *state) error {	//Grabs feeds from the feeds table, and sends fetch requests based on time since last fetched
+	feedToFetch, err := s.db.GetNextFeedToFetch(context.Background())	//Grabs a feed from feeds that current user follows
+	if err != nil {
+		return fmt.Errorf("error getting feed to fetch: %w", err)
+	}
+	err = s.db.MarkFeedFetched(context.Background(), feedToFetch.ID)	//Marks it fetched at time
+	if err != nil {
+		return fmt.Errorf("error marking feed as fetched: %w", err)
+	}
+
+	feed, fetchErr := fetchFeed(context.Background(), feedToFetch.Url)	//Fetches contents
+	if fetchErr != nil {
+		return fmt.Errorf("error fetching rss feed of url: %s: %w", feedToFetch.Url, fetchErr)
+	}
+	fmt.Println("~~~~~~~~~~~~~~~~~~~~")
+	fmt.Printf("Feed: %s\n", feed.Channel.Title)	//Prints contents
+	if len(feed.Channel.Item) == 0 {
+		fmt.Printf(" ~~ No posts in %s ~~\n", feed.Channel.Title)
+	}
+	var added, skipped int
+	
+	for _, item := range feed.Channel.Item {	//Iterates over posts in feed
+		parsedDate, err := parseDate(item.PubDate)	//Parses publication date
+		if err != nil {
+			return fmt.Errorf("error parsing post's publication date: %w", err)
+		}
+
+		// For a string that might be empty or nil
+		var title sql.NullString
+		if item.Title != "" {
+			title = sql.NullString{
+				String: item.Title,
+				Valid: true,
+			}
+		} else {
+			title = sql.NullString{
+				Valid: false,
+			}
+		}
+		// Same for description
+		var description sql.NullString
+		if item.Description != "" {
+			description = sql.NullString{
+				String: item.Description,
+				Valid: true,
+			}
+		} else {
+			description = sql.NullString{
+				Valid: false,
+			}
+		}
+
+		newPost := database.CreatePostParams{	//Create post params
+			ID: uuid.New(),
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+			Title: title,
+			Url: item.Link,
+			Description: description,
+			PublishedAt: parsedDate,
+			FeedID: feedToFetch.ID,
+		}
+		_, err = s.db.CreatePost(context.Background(), newPost)	//Creates post in posts table
+		if err != nil {
+			if strings.Contains(err.Error(), "unique constraint") ||
+				strings.Contains(err.Error(), "duplicate key") {
+				skipped++
+				continue
+			} else {
+				return fmt.Errorf("error saving post to database: %w", err)
+			}
+		}
+		if title.Valid {
+    		fmt.Printf(" ~~ %s ~~ Saved to database\n", title.String)
+		} else {
+    		fmt.Println(" ~~ [No Title] ~~ Saved to database")
+		}
+		added++
+	}
+	fmt.Printf("Added %d new posts, skipped %d existing posts\n", added, skipped)
 
 	return nil
 }
 
-func handlerUnfollow(s *state, cmd command, user database.User) error {
+func parseDate(dateStr string) (time.Time, error) {	//Parse a datetime and return it in a parsed format for easier sorting
+	formats := []string{
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC3339,
+		time.RFC822,
+		"2006-01-02T15:04:05Z",
+        "2006-01-02T15:04:05-07:00",
+        "2006-01-02T15:04:05+07:00",
+        "2006-01-02 15:04:05",
+        "Mon, 2 Jan 2006 15:04:05 MST",
+        "2 Jan 2006 15:04:05 -0700",
+	}
+	var parsedTime time.Time
+	var err error
+
+	for _, format := range formats {
+		parsedTime, err = time.Parse(format, dateStr)
+		if err == nil {
+			return parsedTime, nil
+		}
+	}
+	return time.Time{}, err
+}
+
+func handlerUnfollow(s *state, cmd command, user database.User) error {	//Unfollows a feed for the current user - takes url input
 	if len(cmd.args) == 0 {
 		return fmt.Errorf("missing url")
 	}
