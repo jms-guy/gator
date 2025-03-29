@@ -36,41 +36,49 @@ func handlerAgg(s *state, cmd command) error {	//Aggregator service
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {	//Lists all feeds being followed by current user
-	currentUser := s.cfg.CurrentUserName
-
-	user, err := s.db.GetUser(context.Background(), currentUser)	//Gets user data from users table
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("missing url")
+	}
+	url := cmd.args[0]
+	feed, err := s.db.GetFeed(context.Background(), url)	//Gets feed data from feeds table
 	if err != nil {
-		return fmt.Errorf("error retrieving user from database: %w", err)
+		return fmt.Errorf("error getting feed data: %w", err)
 	}
 
+	unfollowParams := database.UnfollowParams{
+		UserID: user.ID,
+		FeedID: feed.ID,
+	}
+	unfollowErr := s.db.Unfollow(context.Background(), unfollowParams)
+	if unfollowErr != nil {
+		return fmt.Errorf("error unfollowing %s: %w", feed.Name, unfollowErr)
+	}
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command, user database.User) error {	//Lists all feeds being followed by current user
 	follows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)	//Get feed follows based on user
 	if err != nil {
-		return fmt.Errorf("error retrieving follows for %s: %w", currentUser, err)
+		return fmt.Errorf("error retrieving follows for %s: %w", user.Name, err)
 	}
 	if len(follows) == 0 {
-    	fmt.Printf("%s is not following any feeds\n", currentUser)
+    	fmt.Printf("%s is not following any feeds\n", user.Name)
     return nil
 	}
 
-	fmt.Printf("Feeds followed by %s:\n", currentUser)	//Returns follow data
+	fmt.Printf("Feeds followed by %s:\n", user.Name)	//Returns follow data
 	for _, follow := range follows {
 		fmt.Println(follow.Name)
 	}
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {	//Sets the current user to be following a given feed
+func handlerFollow(s *state, cmd command, user database.User) error {	//Sets the current user to be following a given feed
 	if len(cmd.args) == 0 {	//Checks arguments
 		return fmt.Errorf("missing feed url")
 	}
 	url := cmd.args[0]
-	currentUser := s.cfg.CurrentUserName
-
-	user, err := s.db.GetUser(context.Background(), currentUser)	//Gets current user data from users table
-	if err != nil {
-		return fmt.Errorf("error retrieving user from database: %w", err)
-	}
 
 	feed, err := s.db.GetFeed(context.Background(), url)	//Gets feed data from feeds table
 	if err != nil {
@@ -91,7 +99,7 @@ func handlerFollow(s *state, cmd command) error {	//Sets the current user to be 
 	}
 
 	fmt.Printf("Feed: %s\n", follow.FeedName)
-	fmt.Printf("%s\n", currentUser)
+	fmt.Printf("%s\n", user.Name)
 	return nil
 }
 
@@ -115,19 +123,13 @@ func handlerFeeds(s *state, cmd command) error {	//Returns list of feeds in data
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {	//Creates a feed in database
+func handlerAddFeed(s *state, cmd command, user database.User) error {	//Creates a feed in database
 	if len(cmd.args) < 2 {	//Checks arguments
 		return fmt.Errorf("expected input: 'addfeed -feedname- -url-")
 	}
 
-	currentUser := s.cfg.CurrentUserName
 	feedname := cmd.args[0]
 	url := cmd.args[1]
-
-	user, err := s.db.GetUser(context.Background(), currentUser)	//Gets user data from users table - need user's ID
-	if err != nil {
-		return fmt.Errorf("error retrieving user from database: %w", err)
-	}
 
 	newFeed := database.CreateFeedParams{	//Set feed params
 		ID: uuid.New(),
@@ -157,7 +159,7 @@ func handlerAddFeed(s *state, cmd command) error {	//Creates a feed in database
 	}
 
 	fmt.Printf("Feed: %s\n", follow.FeedName)
-	fmt.Printf("%s\n", currentUser)
+	fmt.Printf("%s\n", user.Name)
 	return nil
 }
 
@@ -227,6 +229,17 @@ func handlerRegister(s *state, cmd command) error {	//Registers new user
 	return nil
 }
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {	//Closure/middleware function that handles log in functionality for necessary handler functions
+	return func(s *state, cmd command) error {	//Returned inner function
+		user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)	//Get user data from users table
+		if err != nil {
+			return fmt.Errorf("error retrieving user: %w", err)
+		}
+		return handler(s, cmd, user)	//Handler function call
+	}
+}
+
+//Command functions
 func (c *commands) register(name string, f func(*state, command) error) {	//Registers command in state/commands struct
 	c.cmds[name] = f
 }

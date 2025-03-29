@@ -36,10 +36,11 @@ func main() {
 	commands.register("reset", handlerReset)	//Reset command	- clears database of all data
 	commands.register("users", handlerUsers)	//Users command	- lists users in database
 	commands.register("agg", handlerAgg)	//Aggregator command - handles long-running aggregator service 
-	commands.register("addfeed", handlerAddFeed)	//Addfeed command - adds a feed to database
+	commands.register("addfeed", middlewareLoggedIn(handlerAddFeed))	//Addfeed command - adds a feed to database
 	commands.register("feeds", handlerFeeds)	//Feeds command - lists feeds in database
-	commands.register("follow", handlerFollow)	//Follow command - adds a follow record, for the given url feed and current user
-	commands.register("following", handlerFollowing)	//Following command - lists all feeds being followed by current user
+	commands.register("follow", middlewareLoggedIn(handlerFollow))	//Follow command - adds a follow record, for the given url feed and current user
+	commands.register("following", middlewareLoggedIn(handlerFollowing))	//Following command - lists all feeds being followed by current user
+	commands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 
 	args := os.Args	//Gets user input arguments
 	if len(args) < 2 {
