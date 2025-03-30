@@ -1,4 +1,4 @@
-module github.com/jms-guy/rss_aggregator
+module github.com/jms-guy/gator
 
 go 1.24.0
 

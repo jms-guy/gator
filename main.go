@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"github.com/jms-guy/rss_aggregator/internal/config"
-	"github.com/jms-guy/rss_aggregator/internal/database"
+	"github.com/jms-guy/gator/internal/config"
+	"github.com/jms-guy/gator/internal/database"
 
 	_ "github.com/lib/pq"	//Imported for side effects
 )

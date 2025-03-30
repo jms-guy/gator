@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 	"github.com/google/uuid"
-	"github.com/jms-guy/rss_aggregator/internal/config"
-	"github.com/jms-guy/rss_aggregator/internal/database"
+	"github.com/jms-guy/gator/internal/config"
+	"github.com/jms-guy/gator/internal/database"
 )
 
 type state struct {		//State struct holding database & config information
